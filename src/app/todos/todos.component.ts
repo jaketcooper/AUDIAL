@@ -14,6 +14,10 @@ const client = generateClient<Schema>();
 })
 export class TodosComponent implements OnInit {
   todos: any[] = [];
+ 
+  deleteTodo(id: string) {
+    client.models.Todo.delete({ id })
+  }
 
   ngOnInit(): void {
     this.listTodos();
