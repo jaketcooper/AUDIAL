@@ -2,6 +2,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { CognitoIdentityClient } from "@aws-sdk/client-cognito-identity";
 import { fromCognitoIdentityPool } from "@aws-sdk/credential-provider-cognito-identity";
+import sha256 from 'crypto-js/sha256';
+import Base64 from 'crypto-js/enc-base64';
+import Hex from 'crypto-js/enc-hex';
 
 const AuthContext = createContext(null);
 
@@ -10,12 +13,8 @@ const AUTH_CONFIG = {
   spotify: {
     clientId: '3226c7189a0b403c9daf846e26cd1221',
     scopes: 'user-read-private user-read-email streaming',
-    redirectUri: process.env.NODE_ENV === 'production' 
-      ? 'https://un1t.gg/audial/callback'
-      : 'http://localhost:3000/audial/callback',
-    baseUrl: process.env.NODE_ENV === 'production'
-      ? 'https://un1t.gg/audial'
-      : 'http://localhost:3000'
+    redirectUri: 'http://3.213.192.126/audial/callback',
+    baseUrl: 'http://3.213.192.126/audial'
   },
   aws: {
     region: 'us-east-1',
@@ -23,22 +22,30 @@ const AUTH_CONFIG = {
   }
 };
 
-// Generate random string for PKCE
 const generateRandomString = (length) => {
   const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  const values = crypto.getRandomValues(new Uint8Array(length));
-  return values.reduce((acc, x) => acc + possible[x % possible.length], "");
+  const values = new Uint8Array(length);
+  window.crypto.getRandomValues(values);
+  return Array.from(values)
+    .map(x => possible.charCodeAt(x % possible.length))
+    .map(x => String.fromCharCode(x))
+    .join('');
 };
 
-// Generate code challenge from verifier
-const generateCodeChallenge = async (codeVerifier) => {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(codeVerifier);
-  const digest = await crypto.subtle.digest('SHA-256', data);
-  return btoa(String.fromCharCode(...new Uint8Array(digest)))
-    .replace(/=/g, '')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_');
+const generateCodeChallenge = (codeVerifier) => {
+  try {
+    console.log('Generating challenge for verifier:', codeVerifier);
+    const hashed = sha256(codeVerifier);
+    const encoded = Base64.stringify(hashed)
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+    console.log('Generated challenge:', encoded);
+    return encoded;
+  } catch (error) {
+    console.error('Error generating challenge:', error);
+    throw error;
+  }
 };
 
 export const AuthProvider = ({ children }) => {
@@ -49,34 +56,27 @@ export const AuthProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Initialize AWS Cognito Identity client
   const cognitoIdentityClient = new CognitoIdentityClient({
     region: AUTH_CONFIG.aws.region,
   });
-
-  useEffect(() => {
-    // Check URL for auth code on component mount
-    checkAuthCode().finally(() => {
-      setIsLoading(false);
-    });
-  }, []);
 
   const checkAuthCode = async () => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
     
     if (code) {
-      // Get code verifier from session storage
       const codeVerifier = sessionStorage.getItem('codeVerifier');
       if (codeVerifier) {
         try {
+          // Clear the code from sessionStorage to prevent duplicate attempts
+          sessionStorage.removeItem('codeVerifier');
           await handleCallback(code, codeVerifier);
         } catch (error) {
           console.error('Auth callback error:', error);
           setError(error.message);
         }
       }
-      // Clean up URL while preserving the base path
+      // Clean up URL after handling code
       window.history.replaceState(
         {}, 
         document.title, 
@@ -85,17 +85,40 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const initiateLogin = async () => {
+  const refreshSession = async () => {
+    const refreshToken = localStorage.getItem('spotify_refresh_token');
+    if (!refreshToken) return false;
     try {
+      // Implement refresh token logic here
+      return true;
+    } catch (error) {
+      console.error('Session refresh error:', error);
+      return false;
+    }
+  };
+
+  useEffect(() => {
+    const initAuth = async () => {
+      await checkAuthCode();
+      setIsLoading(false);
+    };
+    initAuth();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const initiateLogin = () => {
+    try {
+      console.log('Initial redirect URI:', AUTH_CONFIG.spotify.redirectUri);
       setError(null);
-      // PKCE: Generate code verifier and challenge
-      const codeVerifier = generateRandomString(64);
-      const codeChallenge = await generateCodeChallenge(codeVerifier);
       
-      // Store code verifier for later use
+      const codeVerifier = generateRandomString(128);
+      console.log('Generated verifier:', codeVerifier);
+      
+      const codeChallenge = generateCodeChallenge(codeVerifier);
+      console.log('Generated challenge:', codeChallenge);
+      
       sessionStorage.setItem('codeVerifier', codeVerifier);
 
-      // Spotify OAuth parameters
       const params = new URLSearchParams({
         client_id: AUTH_CONFIG.spotify.clientId,
         response_type: 'code',
@@ -105,7 +128,6 @@ export const AuthProvider = ({ children }) => {
         scope: AUTH_CONFIG.spotify.scopes,
       });
 
-      // Redirect to Spotify login
       window.location.href = `https://accounts.spotify.com/authorize?${params.toString()}`;
     } catch (error) {
       console.error('Login initiation error:', error);
@@ -114,11 +136,15 @@ export const AuthProvider = ({ children }) => {
   };
 
   const handleCallback = async (code, codeVerifier) => {
+    console.log('Starting token exchange with:', {
+        code: code.substring(0, 10) + '...', // Don't log full code
+        codeVerifier: codeVerifier.substring(0, 10) + '...',
+        redirectUri: AUTH_CONFIG.spotify.redirectUri
+    });
     try {
       setError(null);
       setIsLoading(true);
 
-      // Exchange code for token
       const tokenResponse = await fetch('https://accounts.spotify.com/api/token', {
         method: 'POST',
         headers: {
@@ -134,25 +160,48 @@ export const AuthProvider = ({ children }) => {
       });
 
       if (!tokenResponse.ok) {
-        throw new Error('Token exchange failed');
+        const errorText = await tokenResponse.text();
+        console.error('Token exchange failed with:', errorText);
+        throw new Error(`Token exchange failed: ${errorText}`);
       }
 
       const tokenData = await tokenResponse.json();
       setSpotifyToken(tokenData.access_token);
 
-      // Get AWS credentials using Spotify token
+      // Validate token with your Lambda
+      const validationResponse = await fetch('https://m3br67dc5v4b2xbg3ytdshh6wy0sqokr.lambda-url.us-east-1.on.aws/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          token: tokenData.access_token
+        })
+      });
+
+      console.log('Lambda response status:', validationResponse.status);
+      const validationText = await validationResponse.text();
+      console.log('Lambda response body:', validationText);
+
+      if (!validationResponse.ok) {
+        throw new Error(`Token validation failed: ${validationText}`);
+      }
+
+      const validationData = JSON.parse(validationText);
+      console.log('Parsed validation data:', validationData);
+
       const credentials = await fromCognitoIdentityPool({
         client: cognitoIdentityClient,
         identityPoolId: AUTH_CONFIG.aws.identityPoolId,
+        customRoleArn: undefined,  // Add this
         logins: {
-          'spotify.com': tokenData.access_token
+          'accounts.spotify.com': validationData.token
         }
-      })();
+      });
 
       setCredentials(credentials);
       setIsAuthenticated(true);
 
-      // Get user profile
       const userResponse = await fetch('https://api.spotify.com/v1/me', {
         headers: {
           'Authorization': `Bearer ${tokenData.access_token}`
@@ -166,7 +215,6 @@ export const AuthProvider = ({ children }) => {
       const userData = await userResponse.json();
       setUserId(userData.id);
       
-      // Store refresh token if provided
       if (tokenData.refresh_token) {
         localStorage.setItem('spotify_refresh_token', tokenData.refresh_token);
       }
@@ -191,22 +239,6 @@ export const AuthProvider = ({ children }) => {
     setError(null);
     sessionStorage.removeItem('codeVerifier');
     localStorage.removeItem('spotify_refresh_token');
-  };
-
-  const refreshSession = async () => {
-    const refreshToken = localStorage.getItem('spotify_refresh_token');
-    if (!refreshToken) {
-      return false;
-    }
-
-    try {
-      // Implement refresh token logic here
-      // This would be similar to handleCallback but using the refresh_token grant type
-      return true;
-    } catch (error) {
-      console.error('Session refresh error:', error);
-      return false;
-    }
   };
 
   return (

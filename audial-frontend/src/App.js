@@ -1,5 +1,5 @@
-// src/App.js
 import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthProvider';
 
 const LoginButton = () => {
@@ -30,17 +30,33 @@ const UserProfile = () => {
 };
 
 const AppContent = () => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return <div>Loading...</div>;
+  }
+
   return isAuthenticated ? <UserProfile /> : <LoginButton />;
 };
 
 function App() {
   return (
-    <AuthProvider>
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <AppContent />
-      </div>
-    </AuthProvider>
+    <BrowserRouter>
+      <AuthProvider>
+        <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+          <Routes>
+            {/* Main app route */}
+            <Route path="/audial" element={<AppContent />} />
+            
+            {/* Callback route */}
+            <Route path="/audial/callback" element={<AppContent />} />
+            
+            {/* Redirect root to /audial */}
+            <Route path="/" element={<Navigate to="/audial" replace />} />
+          </Routes>
+        </div>
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
 

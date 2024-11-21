@@ -23,4 +23,4 @@ yarn-debug.log*
 yarn-error.log*
 
 spotify-token-validator/venv/
-spotify-token-validator/urllib3*/
+spotify-token-validator/package/
