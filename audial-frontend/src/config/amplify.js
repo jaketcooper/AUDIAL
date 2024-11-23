@@ -15,8 +15,8 @@ Amplify.configure({
         'playlist-read-collaborative', 
         'streaming'
       ],
-      redirectSignIn: 'http://localhost:3000/',
-      redirectSignOut: 'http://localhost:3000/',
+      redirectSignIn: 'http://un1t.gg/audial',
+      redirectSignOut: 'http://un1t.gg/audial',
       responseType: 'code',
       providers: ['Spotify']
     }

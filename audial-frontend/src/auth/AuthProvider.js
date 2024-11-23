@@ -4,22 +4,27 @@ import { CognitoIdentityClient } from "@aws-sdk/client-cognito-identity";
 import { fromCognitoIdentity } from "@aws-sdk/credential-provider-cognito-identity";
 import sha256 from 'crypto-js/sha256';
 import Base64 from 'crypto-js/enc-base64';
-import Hex from 'crypto-js/enc-hex';
 
 const AuthContext = createContext(null);
 
-// Configuration
 const AUTH_CONFIG = {
   spotify: {
     clientId: '3226c7189a0b403c9daf846e26cd1221',
     scopes: 'user-read-private user-read-email streaming',
-    redirectUri: 'http://3.213.192.126/audial/callback',
-    baseUrl: 'http://3.213.192.126/audial'
+    redirectUri: 'http://un1t.gg/audial/callback',
+    baseUrl: 'http://un1t.gg/audial'
   },
   aws: {
     region: 'us-east-1',
     identityPoolId: 'us-east-1:a60cbe36-1c4f-44bb-a06c-c9c34be2713e'
   }
+};
+
+// Secure storage keys
+const STORAGE_KEYS = {
+  REFRESH_TOKEN: 'spotify_refresh_token',
+  EXPIRATION: 'token_expiration',
+  USER_ID: 'user_id'
 };
 
 const generateRandomString = (length) => {
@@ -34,16 +39,13 @@ const generateRandomString = (length) => {
 
 const generateCodeChallenge = (codeVerifier) => {
   try {
-    console.log('Generating challenge for verifier:', codeVerifier);
     const hashed = sha256(codeVerifier);
-    const encoded = Base64.stringify(hashed)
+    return Base64.stringify(hashed)
       .replace(/\+/g, '-')
       .replace(/\//g, '_')
       .replace(/=+$/, '');
-    console.log('Generated challenge:', encoded);
-    return encoded;
   } catch (error) {
-    console.error('Error generating challenge:', error);
+    console.error('Error generating code challenge');
     throw error;
   }
 };
@@ -55,10 +57,160 @@ export const AuthProvider = ({ children }) => {
   const [userId, setUserId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [tokenRefreshTimeout, setTokenRefreshTimeout] = useState(null);
 
   const cognitoIdentityClient = new CognitoIdentityClient({
     region: AUTH_CONFIG.aws.region,
   });
+
+  const refreshSpotifyToken = async () => {
+    const refreshToken = localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
+    if (!refreshToken) {
+      throw new Error('No refresh token available');
+    }
+
+    const response = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_id: AUTH_CONFIG.spotify.clientId,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to refresh token');
+    }
+
+    const tokenData = await response.json();
+    return tokenData;
+  };
+
+  const scheduleTokenRefresh = (expiresIn) => {
+    // Schedule refresh 5 minutes before expiration
+    const refreshTime = (expiresIn - 300) * 1000;
+    const timeout = setTimeout(async () => {
+      try {
+        await handleTokenRefresh();
+      } catch (error) {
+        setError('Failed to refresh session');
+        logout();
+      }
+    }, refreshTime);
+
+    setTokenRefreshTimeout(timeout);
+    return timeout;
+  };
+
+  const handleTokenRefresh = async () => {
+    try {
+      const tokenData = await refreshSpotifyToken();
+      
+      // Validate token and get Cognito credentials
+      const validationResponse = await fetch('https://m3br67dc5v4b2xbg3ytdshh6wy0sqokr.lambda-url.us-east-1.on.aws/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          token: tokenData.access_token
+        })
+      });
+
+      if (!validationResponse.ok) {
+        throw new Error('Token validation failed');
+      }
+
+      const validationData = await validationResponse.json();
+      setSpotifyToken(tokenData.access_token);
+
+      // Update credentials
+      const credentials = await getCredentials(validationData);
+      setCredentials(credentials);
+      
+      // Store new expiration
+      const expirationTime = Date.now() + (tokenData.expires_in * 1000);
+      localStorage.setItem(STORAGE_KEYS.EXPIRATION, expirationTime.toString());
+
+      // Schedule next refresh
+      scheduleTokenRefresh(tokenData.expires_in);
+
+      return true;
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const restoreSession = async () => {
+    try {
+      const refreshToken = localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
+      const expiration = localStorage.getItem(STORAGE_KEYS.EXPIRATION);
+      const storedUserId = localStorage.getItem(STORAGE_KEYS.USER_ID);
+
+      if (!refreshToken || !expiration || !storedUserId) {
+        return false;
+      }
+
+      // Check if token needs immediate refresh
+      const now = Date.now();
+      const expirationTime = parseInt(expiration, 10);
+      
+      if (now >= expirationTime - 300000) { // If within 5 minutes of expiration
+        await handleTokenRefresh();
+      } else {
+        // Schedule future refresh
+        const timeUntilExpiry = Math.floor((expirationTime - now) / 1000);
+        scheduleTokenRefresh(timeUntilExpiry);
+      }
+
+      setUserId(storedUserId);
+      setIsAuthenticated(true);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  };
+
+  const getCredentials = async (validationData) => {
+    const identityId = validationData.identityId;
+    const openIdToken = validationData.cognitoToken;
+
+    const loginMap = {
+      'cognito-identity.amazonaws.com': openIdToken
+    };
+
+    return await fromCognitoIdentity({
+      client: cognitoIdentityClient,
+      identityId: identityId,
+      logins: loginMap
+    });
+  };
+
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        const sessionRestored = await restoreSession();
+        if (!sessionRestored) {
+          await checkAuthCode();
+        }
+      } catch (error) {
+        setError('Failed to initialize authentication');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    initAuth();
+
+    return () => {
+      if (tokenRefreshTimeout) {
+        clearTimeout(tokenRefreshTimeout);
+      }
+    };
+  }, []);
 
   const checkAuthCode = async () => {
     const params = new URLSearchParams(window.location.search);
@@ -68,32 +220,18 @@ export const AuthProvider = ({ children }) => {
       const codeVerifier = sessionStorage.getItem('codeVerifier');
       if (codeVerifier) {
         try {
-          // Clear the code from sessionStorage to prevent duplicate attempts
           sessionStorage.removeItem('codeVerifier');
           await handleCallback(code, codeVerifier);
         } catch (error) {
-          console.error('Auth callback error:', error);
-          setError(error.message);
+          console.error('Authentication failed');
+          setError('Authentication failed');
         }
       }
-      // Clean up URL after handling code
       window.history.replaceState(
         {}, 
         document.title, 
         AUTH_CONFIG.spotify.baseUrl
       );
-    }
-  };
-
-  const refreshSession = async () => {
-    const refreshToken = localStorage.getItem('spotify_refresh_token');
-    if (!refreshToken) return false;
-    try {
-      // Implement refresh token logic here
-      return true;
-    } catch (error) {
-      console.error('Session refresh error:', error);
-      return false;
     }
   };
 
@@ -103,19 +241,14 @@ export const AuthProvider = ({ children }) => {
       setIsLoading(false);
     };
     initAuth();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const initiateLogin = () => {
     try {
-      console.log('Initial redirect URI:', AUTH_CONFIG.spotify.redirectUri);
       setError(null);
       
       const codeVerifier = generateRandomString(128);
-      console.log('Generated verifier:', codeVerifier);
-      
       const codeChallenge = generateCodeChallenge(codeVerifier);
-      console.log('Generated challenge:', codeChallenge);
       
       sessionStorage.setItem('codeVerifier', codeVerifier);
 
@@ -130,7 +263,6 @@ export const AuthProvider = ({ children }) => {
 
       window.location.href = `https://accounts.spotify.com/authorize?${params.toString()}`;
     } catch (error) {
-      console.error('Login initiation error:', error);
       setError('Failed to initiate login process');
     }
   };
@@ -140,7 +272,6 @@ export const AuthProvider = ({ children }) => {
       setError(null);
       setIsLoading(true);
 
-      // Exchange code for token
       const tokenResponse = await fetch('https://accounts.spotify.com/api/token', {
         method: 'POST',
         headers: {
@@ -160,9 +291,11 @@ export const AuthProvider = ({ children }) => {
       }
 
       const tokenData = await tokenResponse.json();
-      setSpotifyToken(tokenData.access_token);
+      
+      // Store expiration time
+      const expirationTime = Date.now() + (tokenData.expires_in * 1000);
+      localStorage.setItem(STORAGE_KEYS.EXPIRATION, expirationTime.toString());
 
-      // Validate token and get Cognito token
       const validationResponse = await fetch('https://m3br67dc5v4b2xbg3ytdshh6wy0sqokr.lambda-url.us-east-1.on.aws/', {
         method: 'POST',
         headers: {
@@ -174,52 +307,34 @@ export const AuthProvider = ({ children }) => {
       });
 
       if (!validationResponse.ok) {
-        const errorText = await validationResponse.text();
-        throw new Error(`Token validation failed: ${errorText}`);
+        throw new Error('Token validation failed');
       }
 
       const validationData = await validationResponse.json();
-      console.log('Validation data:', validationData);
+      setSpotifyToken(validationData.token);
 
-      // Store Spotify token for API calls
-      setSpotifyToken(validationData.token); // Use 'token' from validationData
-
-      // Get AWS credentials using Cognito token
-      const getCredentials = async () => {
-        const identityId = validationData.identityId;
-        const openIdToken = validationData.cognitoToken;
-
-        const loginMap = {
-          'cognito-identity.amazonaws.com': openIdToken
-        };
-        console.log('Trying to get credentials with identityId and logins:', identityId, loginMap);
-
-        return await fromCognitoIdentity({
-          client: cognitoIdentityClient,
-          identityId: identityId,
-          logins: loginMap
-        });
-      };
-
-      // Then use it:
       try {
-        const credentials = await getCredentials();
-        console.log('Successfully obtained credentials:', credentials);
+        const credentials = await getCredentials(validationData);
         setCredentials(credentials);
         setIsAuthenticated(true);
         setUserId(validationData.userId);
+        
+        // Store user ID
+        localStorage.setItem(STORAGE_KEYS.USER_ID, validationData.userId);
+
       } catch (error) {
-        console.error('Failed to authenticate:', error);
         setError('Failed to obtain AWS credentials');
+        throw error;
       }
 
-      // Store refresh token if provided
       if (tokenData.refresh_token) {
-        localStorage.setItem('spotify_refresh_token', tokenData.refresh_token);
+        localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, tokenData.refresh_token);
       }
+
+      // Schedule token refresh
+      scheduleTokenRefresh(tokenData.expires_in);
 
     } catch (error) {
-      console.error('Callback handling error:', error);
       setError('Authentication failed');
       setIsAuthenticated(false);
       setCredentials(null);
@@ -236,8 +351,17 @@ export const AuthProvider = ({ children }) => {
     setSpotifyToken(null);
     setUserId(null);
     setError(null);
+    
+    // Clear all stored auth data
+    localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
+    localStorage.removeItem(STORAGE_KEYS.EXPIRATION);
+    localStorage.removeItem(STORAGE_KEYS.USER_ID);
     sessionStorage.removeItem('codeVerifier');
-    localStorage.removeItem('spotify_refresh_token');
+    
+    // Clear refresh timeout
+    if (tokenRefreshTimeout) {
+      clearTimeout(tokenRefreshTimeout);
+    }
   };
 
   return (
@@ -250,8 +374,7 @@ export const AuthProvider = ({ children }) => {
         isLoading,
         error,
         login: initiateLogin,
-        logout,
-        refreshSession
+        logout
       }}
     >
       {children}
