@@ -24,3 +24,5 @@ yarn-error.log*
 
 spotify-token-validator/venv/
 spotify-token-validator/package/
+
+docs/

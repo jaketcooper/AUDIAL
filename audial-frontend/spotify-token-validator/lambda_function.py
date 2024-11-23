@@ -1,5 +1,6 @@
 import json
 import urllib3 # type: ignore
+import boto3
 
 def lambda_handler(event, context):
     headers = {}
@@ -15,7 +16,7 @@ def lambda_handler(event, context):
                 'body': json.dumps({'error': 'No token provided'})
             }
         
-        # Just validate the token with Spotify
+        # Validate the token with Spotify
         http = urllib3.PoolManager()
         response = http.request(
             'GET',
@@ -34,17 +35,33 @@ def lambda_handler(event, context):
         
         user_data = json.loads(response.data.decode('utf-8'))
         
-        # Just return the validated token
+        # Get Cognito token using GetOpenIdTokenForDeveloperIdentity
+        cognito = boto3.client('cognito-identity')
+        cognito_response = cognito.get_open_id_token_for_developer_identity(
+            IdentityPoolId='us-east-1:a60cbe36-1c4f-44bb-a06c-c9c34be2713e',
+            Logins={
+                'accounts.spotify.com': user_data['id']  # Use Spotify user ID as the identifier
+            },
+            TokenDuration=3600  # 1 hour
+        )
+        print("Cognito response:", cognito_response)
+        cognito_credentials = cognito.get_credentials_for_identity(
+            IdentityId=cognito_response['IdentityId'],
+            Logins={
+                'cognito-identity.amazonaws.com': cognito_response['Token']
+            }
+        )
+        cognito_credentials['Credentials']['Expiration'] = cognito_credentials['Credentials']['Expiration'].isoformat()
+        print("Cognito credentials:", cognito_credentials)
         return {
             'statusCode': 200,
             'headers': headers,
             'body': json.dumps({
                 'userId': user_data['id'],
-                'token': spotify_token,  # Return the original Spotify token
-                'identities': [{
-                    'userId': user_data['id'],
-                    'providerName': 'accounts.spotify.com'
-                }]
+                'token': spotify_token,  # Keep original Spotify token
+                'credentials': cognito_credentials['Credentials'],
+                'cognitoToken': cognito_response['Token'],
+                'identityId': cognito_credentials['IdentityId'],
             })
         }
         

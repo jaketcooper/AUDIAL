@@ -1,7 +1,7 @@
 // src/auth/AuthProvider.js
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { CognitoIdentityClient } from "@aws-sdk/client-cognito-identity";
-import { fromCognitoIdentityPool } from "@aws-sdk/credential-provider-cognito-identity";
+import { fromCognitoIdentity } from "@aws-sdk/credential-provider-cognito-identity";
 import sha256 from 'crypto-js/sha256';
 import Base64 from 'crypto-js/enc-base64';
 import Hex from 'crypto-js/enc-hex';
@@ -136,15 +136,11 @@ export const AuthProvider = ({ children }) => {
   };
 
   const handleCallback = async (code, codeVerifier) => {
-    console.log('Starting token exchange with:', {
-        code: code.substring(0, 10) + '...', // Don't log full code
-        codeVerifier: codeVerifier.substring(0, 10) + '...',
-        redirectUri: AUTH_CONFIG.spotify.redirectUri
-    });
     try {
       setError(null);
       setIsLoading(true);
 
+      // Exchange code for token
       const tokenResponse = await fetch('https://accounts.spotify.com/api/token', {
         method: 'POST',
         headers: {
@@ -160,15 +156,13 @@ export const AuthProvider = ({ children }) => {
       });
 
       if (!tokenResponse.ok) {
-        const errorText = await tokenResponse.text();
-        console.error('Token exchange failed with:', errorText);
-        throw new Error(`Token exchange failed: ${errorText}`);
+        throw new Error('Token exchange failed');
       }
 
       const tokenData = await tokenResponse.json();
       setSpotifyToken(tokenData.access_token);
 
-      // Validate token with your Lambda
+      // Validate token and get Cognito token
       const validationResponse = await fetch('https://m3br67dc5v4b2xbg3ytdshh6wy0sqokr.lambda-url.us-east-1.on.aws/', {
         method: 'POST',
         headers: {
@@ -179,46 +173,51 @@ export const AuthProvider = ({ children }) => {
         })
       });
 
-      console.log('Lambda response status:', validationResponse.status);
-      const validationText = await validationResponse.text();
-      console.log('Lambda response body:', validationText);
-
       if (!validationResponse.ok) {
-        throw new Error(`Token validation failed: ${validationText}`);
+        const errorText = await validationResponse.text();
+        throw new Error(`Token validation failed: ${errorText}`);
       }
 
-      const validationData = JSON.parse(validationText);
-      console.log('Parsed validation data:', validationData);
+      const validationData = await validationResponse.json();
+      console.log('Validation data:', validationData);
 
-      const credentials = await fromCognitoIdentityPool({
-        client: cognitoIdentityClient,
-        identityPoolId: AUTH_CONFIG.aws.identityPoolId,
-        customRoleArn: undefined,  // Add this
-        logins: {
-          'accounts.spotify.com': validationData.token
-        }
-      });
+      // Store Spotify token for API calls
+      setSpotifyToken(validationData.token); // Use 'token' from validationData
 
-      setCredentials(credentials);
-      setIsAuthenticated(true);
+      // Get AWS credentials using Cognito token
+      const getCredentials = async () => {
+        const identityId = validationData.identityId;
+        const openIdToken = validationData.cognitoToken;
 
-      const userResponse = await fetch('https://api.spotify.com/v1/me', {
-        headers: {
-          'Authorization': `Bearer ${tokenData.access_token}`
-        }
-      });
+        const loginMap = {
+          'cognito-identity.amazonaws.com': openIdToken
+        };
+        console.log('Trying to get credentials with identityId and logins:', identityId, loginMap);
 
-      if (!userResponse.ok) {
-        throw new Error('Failed to fetch user profile');
+        return await fromCognitoIdentity({
+          client: cognitoIdentityClient,
+          identityId: identityId,
+          logins: loginMap
+        });
+      };
+
+      // Then use it:
+      try {
+        const credentials = await getCredentials();
+        console.log('Successfully obtained credentials:', credentials);
+        setCredentials(credentials);
+        setIsAuthenticated(true);
+        setUserId(validationData.userId);
+      } catch (error) {
+        console.error('Failed to authenticate:', error);
+        setError('Failed to obtain AWS credentials');
       }
 
-      const userData = await userResponse.json();
-      setUserId(userData.id);
-      
+      // Store refresh token if provided
       if (tokenData.refresh_token) {
         localStorage.setItem('spotify_refresh_token', tokenData.refresh_token);
       }
-      
+
     } catch (error) {
       console.error('Callback handling error:', error);
       setError('Authentication failed');
