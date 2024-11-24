@@ -12,8 +12,38 @@
       "AmplifyAppId": "did3focgcdhhx"
     },
     "categories": {
+      "function": {
+        "spotifyTokenValidator": {
+          "awsRegion": "us-east-1",
+          "cognitoIdentityPoolId": "us-east-1:a60cbe36-1c4f-44bb-a06c-c9c34be2713e",
+          "deploymentBucketName": "amplify-audial-dev-49963-deployment",
+          "s3Key": "amplify-builds/spotifyTokenValidator-4c584e446864457a7252-build.zip"
+        }
+      },
+      "api": {
+        "api6f88271f": {}
+      },
       "auth": {
-        "audialb98e7d97": {}
+        "spotifyAuth": {}
+      },
+      "storage": {
+        "listsdev": {
+          "tableName": "lists-dev",
+          "region": "us-east-1",
+          "arn": "arn:aws:dynamodb:us-east-1:203558127065:table/lists-dev",
+          "streamArn": "arn:aws:dynamodb:us-east-1:203558127065:table/lists-dev/stream/2024-11-24T01:37:54.304",
+          "partitionKeyName": "id",
+          "partitionKeyType": "S",
+          "sortKeyName": "last_updated",
+          "sortKeyType": "S"
+        },
+        "xaudialtracks": {
+          "tableName": "xaudial-tracks",
+          "region": "us-east-1",
+          "arn": "arn:aws:dynamodb:us-east-1:203558127065:table/xaudial-tracks",
+          "partitionKeyName": "id",
+          "partitionKeyType": "S"
+        }
       }
     }
   }

@@ -1,30 +1,195 @@
 {
-  "api": {},
-  "auth": {
-    "audialb98e7d97": {
-      "customAuth": false,
-      "dependsOn": [],
-      "frontendAuthConfig": {
-        "mfaConfiguration": "OFF",
-        "mfaTypes": [
-          "SMS"
-        ],
-        "passwordProtectionSettings": {
-          "passwordPolicyCharacters": [],
-          "passwordPolicyMinLength": 8
-        },
-        "signupAttributes": [
-          "EMAIL"
-        ],
-        "socialProviders": [],
-        "usernameAttributes": [],
-        "verificationMechanisms": [
-          "EMAIL"
-        ]
-      },
+  "api": {
+    "api6f88271f": {
+      "dependsOn": [
+        {
+          "attributes": [
+            "Name",
+            "Arn"
+          ],
+          "category": "function",
+          "resourceName": "spotifyTokenValidator"
+        }
+      ],
       "providerPlugin": "awscloudformation",
-      "service": "Cognito"
+      "service": "API Gateway"
     }
   },
-  "function": {}
+  "auth": {
+    "spotifyAuth": {
+      "customAuth": false,
+      "dependsOn": [],
+      "providerPlugin": "awscloudformation",
+      "service": "Cognito",
+      "serviceType": "identityPool"
+    }
+  },
+  "function": {
+    "spotifyTokenValidator": {
+      "build": true,
+      "dependsOn": [
+        {
+          "attributes": [
+            "IdentityPoolId"
+          ],
+          "category": "auth",
+          "resourceName": "spotifyAuth"
+        }
+      ],
+      "providerPlugin": "awscloudformation",
+      "service": "Lambda"
+    }
+  },
+  "parameters": {
+    "AMPLIFY_function_spotifyTokenValidator_awsRegion": {
+      "usedBy": [
+        {
+          "category": "function",
+          "resourceName": "spotifyTokenValidator"
+        }
+      ]
+    },
+    "AMPLIFY_function_spotifyTokenValidator_cognitoIdentityPoolId": {
+      "usedBy": [
+        {
+          "category": "function",
+          "resourceName": "spotifyTokenValidator"
+        }
+      ]
+    },
+    "AMPLIFY_function_spotifyTokenValidator_deploymentBucketName": {
+      "usedBy": [
+        {
+          "category": "function",
+          "resourceName": "spotifyTokenValidator"
+        }
+      ]
+    },
+    "AMPLIFY_function_spotifyTokenValidator_s3Key": {
+      "usedBy": [
+        {
+          "category": "function",
+          "resourceName": "spotifyTokenValidator"
+        }
+      ]
+    },
+    "AMPLIFY_storage_listsdev_arn": {
+      "usedBy": [
+        {
+          "category": "storage",
+          "resourceName": "listsdev"
+        }
+      ]
+    },
+    "AMPLIFY_storage_listsdev_partitionKeyName": {
+      "usedBy": [
+        {
+          "category": "storage",
+          "resourceName": "listsdev"
+        }
+      ]
+    },
+    "AMPLIFY_storage_listsdev_partitionKeyType": {
+      "usedBy": [
+        {
+          "category": "storage",
+          "resourceName": "listsdev"
+        }
+      ]
+    },
+    "AMPLIFY_storage_listsdev_region": {
+      "usedBy": [
+        {
+          "category": "storage",
+          "resourceName": "listsdev"
+        }
+      ]
+    },
+    "AMPLIFY_storage_listsdev_sortKeyName": {
+      "usedBy": [
+        {
+          "category": "storage",
+          "resourceName": "listsdev"
+        }
+      ]
+    },
+    "AMPLIFY_storage_listsdev_sortKeyType": {
+      "usedBy": [
+        {
+          "category": "storage",
+          "resourceName": "listsdev"
+        }
+      ]
+    },
+    "AMPLIFY_storage_listsdev_streamArn": {
+      "usedBy": [
+        {
+          "category": "storage",
+          "resourceName": "listsdev"
+        }
+      ]
+    },
+    "AMPLIFY_storage_listsdev_tableName": {
+      "usedBy": [
+        {
+          "category": "storage",
+          "resourceName": "listsdev"
+        }
+      ]
+    },
+    "AMPLIFY_storage_xaudialtracks_arn": {
+      "usedBy": [
+        {
+          "category": "storage",
+          "resourceName": "xaudialtracks"
+        }
+      ]
+    },
+    "AMPLIFY_storage_xaudialtracks_partitionKeyName": {
+      "usedBy": [
+        {
+          "category": "storage",
+          "resourceName": "xaudialtracks"
+        }
+      ]
+    },
+    "AMPLIFY_storage_xaudialtracks_partitionKeyType": {
+      "usedBy": [
+        {
+          "category": "storage",
+          "resourceName": "xaudialtracks"
+        }
+      ]
+    },
+    "AMPLIFY_storage_xaudialtracks_region": {
+      "usedBy": [
+        {
+          "category": "storage",
+          "resourceName": "xaudialtracks"
+        }
+      ]
+    },
+    "AMPLIFY_storage_xaudialtracks_tableName": {
+      "usedBy": [
+        {
+          "category": "storage",
+          "resourceName": "xaudialtracks"
+        }
+      ]
+    }
+  },
+  "storage": {
+    "listsdev": {
+      "dependsOn": [],
+      "providerPlugin": "awscloudformation",
+      "service": "DynamoDB",
+      "serviceType": "imported"
+    },
+    "xaudialtracks": {
+      "dependsOn": [],
+      "providerPlugin": "awscloudformation",
+      "service": "DynamoDB",
+      "serviceType": "imported"
+    }
+  }
 }
