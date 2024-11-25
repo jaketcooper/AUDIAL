@@ -1,0 +1,80 @@
+Branding:
+    How?:
+       - Full Logo = Icon + Wordmark
+       - Icon only in 2 situations:
+            - Small Screen
+            - Spotify brand already established
+        - Green = #1ED760
+        - Black = #121212
+        - White = #FFFFFF
+        - Font is Platform Default Sans-serif
+    When?:
+        - Metadata from Spotify
+
+Content:
+    How?:
+        - Original Artwork
+        - Rounded Corners
+        - No crop or overlay
+    When?:
+        - Metadata/content from spotify
+
+Album & Podcast Art:
+    - Spotify art required
+    - No modifying or overlaying
+    - Rounded corners 
+        - Standard Screen = 4px radius
+        - Small Screen = 2px radius
+    - Can be omitted
+
+Metadata:
+    - Track, Album, Artist, & Playlist must use Spotify metadata.
+    - Must be legible
+    - Can be truncated to fit.
+    - All metadata must be viewable.
+    - Cannot be manipulated
+
+Character Counts:
+    - Playlist/Album Name = 25
+    - Artist Name = 18
+    - Track Name = 23
+
+Browsing:
+    - Reccomendation rows/shelves are provided.
+    - Metadata is provided
+        - Headlines/naming of unique contexts/context groups
+        - Determine + Populates content categories
+
+Displaying:
+    - No manipulating content/metadata
+    - Max 20 items/set
+    - Link to Spotify 
+
+Linking: https://developer.spotify.com/documentation/design#attribution
+    - Always link to Spotify for playback
+        - OPEN SPOTIFY
+        - PLAY ON SPOTIFY
+        - LISTEN ON SPOTIFY
+    - If not installed, link to store
+        - GET SPOTIFY FREE
+
+Playback:
+    - Use PlaybackRestrictions() to set state
+    - Restricted controls must be disabled/hidden
+    - Track Progress Bar must be NOT SEEKABLE
+        - Must be very obvious
+    - Restricted action attempts result in message:
+        Spotify Premium lets you play any track, podcast episode or audiobook, ad-free and with better audio quality. Go to spotify.com/premium to try it for free.
+    - Extract artwork color for background. 
+        - If not possible, use Spotify color #191414.
+        - Android Palette = https://developer.android.com/reference/android/support/v7/graphics/Palette
+
+Liking:
+    - Liked content can't be stored.
+    - Icon changes to active state.
+    - Like message = Added to Liked Songs
+    - Dislike message = Removed from Liked Songs
+
+Entities:
+    - Support On-Demand & Shuffle Only
+    - Account for Explicit Content

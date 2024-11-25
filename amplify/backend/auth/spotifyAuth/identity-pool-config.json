@@ -1,0 +1,7 @@
+{
+    "IdentityPoolName": "AudialUserPool",
+    "AllowUnauthenticatedIdentities": false,
+    "DeveloperProviderName": "accounts.spotify.com",
+    "AllowClassicFlow": true,
+    "IdentityPoolTags": {}
+}

@@ -1,0 +1,6 @@
+{
+  "lambdaFunctionName": "spotifyTokenValidator",
+  "environmentVariables": {
+    "COGNITO_IDENTITY_POOL_ID": "us-east-1:a60cbe36-1c4f-44bb-a06c-c9c34be2713e"
+  }
+}

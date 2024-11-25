@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "paths": {
+    "/validate-token": {
+      "name": "/validate-token",
+      "lambdaFunction": "spotifyTokenValidator",
+      "permissions": {
+        "setting": "open"
+      },
+      "methods": ["POST", "OPTIONS"]
+    }
+  }
+}
